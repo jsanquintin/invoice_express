@@ -2,31 +2,34 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 import psycopg2
 import os
 from dotenv import load_dotenv
 
-# Load env
+# Cargar variables de entorno
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 
-# Setup
+# Configuración de seguridad
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Usuario fijo
-fake_user = {"username": "admin", "hashed_password": pwd_context.hash("clave123")}
+# Usuario fijo (clave123)
+fake_user = {
+    "username": "admin",
+    "hashed_password": "$2b$12$W92jgmOm1fTYxHTu/5F9kOMKeV2l1zJMI81mbuq8dxOrW4O77n98K"
+}
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict):
     return jwt.encode(data.copy(), SECRET_KEY, algorithm=ALGORITHM)
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -69,7 +72,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     token = create_access_token(data={"sub": form_data.username})
     return {"access_token": token, "token_type": "bearer"}
 
-# Clientes
+# Crear cliente
 @app.post("/clientes", dependencies=[Depends(get_current_user)])
 def crear_cliente(cliente: Cliente):
     conn = get_db()
@@ -80,6 +83,7 @@ def crear_cliente(cliente: Cliente):
     conn.close()
     return {"mensaje": "Cliente creado"}
 
+# Buscar cliente
 @app.get("/cliente/{documento}", dependencies=[Depends(get_current_user)])
 def buscar_cliente(documento: str):
     conn = get_db()
@@ -92,7 +96,7 @@ def buscar_cliente(documento: str):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return {"id": result[0], "nombre": result[1], "direccion": result[2]}
 
-# Productos
+# Crear producto
 @app.post("/productos", dependencies=[Depends(get_current_user)])
 def crear_producto(producto: Producto):
     conn = get_db()
@@ -103,6 +107,7 @@ def crear_producto(producto: Producto):
     conn.close()
     return {"mensaje": "Producto creado"}
 
+# Listar productos
 @app.get("/productos", dependencies=[Depends(get_current_user)])
 def listar_productos():
     conn = get_db()
@@ -113,7 +118,7 @@ def listar_productos():
     conn.close()
     return [{"id": p[0], "nombre": p[1], "precio": p[2]} for p in productos]
 
-# Facturas
+# Crear factura
 @app.post("/facturas", dependencies=[Depends(get_current_user)])
 def crear_factura(factura: Factura):
     conn = get_db()
@@ -123,17 +128,21 @@ def crear_factura(factura: Factura):
     itbis = (subtotal - descuento) * 0.18
     total = subtotal - descuento + itbis
     cambio = factura.monto_recibido - total if factura.metodo_pago.lower() == "efectivo" else 0
+
     cur.execute("""
         INSERT INTO facturas (cliente_id, fecha, subtotal, itbis, total, metodo_pago, monto_recibido, cambio)
         VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s) RETURNING id
     """, (factura.cliente_id, subtotal, itbis, total, factura.metodo_pago, factura.monto_recibido, cambio))
     factura_id = cur.fetchone()[0]
+
     for item in factura.items:
         cur.execute("""
             INSERT INTO detalle_factura (factura_id, producto_id, cantidad, precio_unitario, total)
             VALUES (%s, %s, %s, %s, %s)
         """, (factura_id, item.producto_id, item.cantidad, item.precio_unitario, item.cantidad * item.precio_unitario))
+
     conn.commit()
     cur.close()
     conn.close()
+
     return {"mensaje": "Factura creada", "factura_id": factura_id, "total": total, "cambio": cambio}
