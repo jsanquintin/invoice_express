@@ -23,7 +23,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Usuario fijo (clave123)
 fake_user = {
     "username": "admin",
-    "hashed_password": "$2b$12$W92jgmOm1fTYxHTu/5F9kOMKeV2l1zJMI81mbuq8dxOrW4O77n98K"
+    "hashed_password": "$2b$12$Z7MFyep9PhE8M9GmHZqGcOdNDYzDtxDeRjptC/5nvnOeFfP7p0mHi"
 }
 
 def verify_password(plain_password, hashed_password):
